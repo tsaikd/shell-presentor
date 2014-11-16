@@ -1,13 +1,12 @@
 #!/bin/bash
 
-set -e
-
 PN="${BASH_SOURCE[0]##*/}"
 PD="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-SAY_OPT=""
+SAY_OPT="${SAY_OPT}"
+speek_speed="${SPEED:-180}"
 
-if ! type say ; then
+if ! type awk killall say ; then
 	exit 1
 fi
 
@@ -33,33 +32,35 @@ if [ -z "${txtfile}" ] ; then
 fi
 
 CLEAR(){ echo -en "\033c";}
-CIVIS(){ echo -en "\033[?25l";}
-CNORM(){ echo -en "\033[?12l\033[?25h";}
-TPUT(){ echo -en "\033[${1};${2}H";}
-DRAW(){ echo -en "\033%@";echo -en "\033(0";}
-WRITE(){ echo -en "\033(B";}
-BLUE(){ echo -en "\033c\033[0;1m\033[37;44m\033[J";}
-NORM(){ echo -en "\033c\033[0;1m\033[33;42m\033[J";}
 
 K_ESC="$(echo -e "\e")"
 C_N=$'\e[0m'
 C_CUR_TEXT=$'\e[37;44;01m'
 
-max="$(wc -l "${txtfile}" | cut -d' ' -f1)"
+max="$(wc -l "${txtfile}" | awk '{print $1}')"
 line=1
 
 if (( max < 1 )) ; then
 	usage "Empty txt file"
 fi
 
+function is_empty_line() {
+	local txt
+	txt="$(sed -n "${line}p" "${txtfile}")"
+	if [ "${txt}" ] ; then
+		return 1
+	else
+		return 0
+	fi
+}
+
 function draw() {
 	local i
 	local imax
 
 	CLEAR
-	printf "q: Exit | r: Repeat\n"
-	printf "================================="
-	echo
+	printf "line: ${line} | q: Exit | r: Repeat | w: Up | s: Down | +/-: Speed ${speek_speed}\n"
+	printf "=================================\n"
 
 	i=$(( (line - 5) >= 1 ? (line - 5) : 1 ))
 	for ((; i<line ; i++)) ; do
@@ -74,18 +75,15 @@ function draw() {
 	done
 }
 
-speekid=""
 function speek() {
-	if [ "${speekid}" ] && [ -d "/proc/${speekid}" ] ; then
-		kill -9 "${speekid}"
-	fi
-	{ sed -n "${line}p" "${txtfile}" | say ${SAY_OPT} ; } &
-	speekid="$!"
+	killall say
+	{ sed -n "${line}p" "${txtfile}" | say -r ${speek_speed} ${SAY_OPT} ; } &
 }
 
 exec 3>&2
 exec 2>/dev/null
 draw
+speek
 while true ; do
 	read -s -n 1 ans
 	if [ "${ans}" == "${K_ESC}" ] ; then
@@ -96,9 +94,26 @@ while true ; do
 		esac
 		draw
 		speek
+	elif [ "${ans}" == "w" ] ; then
+		line="$(( (line - 1) >= 1 ? (line - 1) : 1 ))"
+		is_empty_line && line="$(( (line - 1) >= 1 ? (line - 1) : 1 ))"
+		draw
+		speek
+	elif [ "${ans}" == "s" ] ; then
+		line="$(( (line + 1) <= max ? (line + 1) : max ))"
+		is_empty_line && line="$(( (line + 1) <= max ? (line + 1) : max ))"
+		draw
+		speek
 	elif [ "${ans}" == "r" ] ; then
 		speek
+	elif [ "${ans}" == "+" ] ; then
+		speek_speed=$(( speek_speed + 10 ))
+		draw
+	elif [ "${ans}" == "-" ] ; then
+		speek_speed=$(( speek_speed - 10 ))
+		draw
 	elif [ "${ans}" == "q" ] ; then
+		killall say
 		break
 	fi
 done
